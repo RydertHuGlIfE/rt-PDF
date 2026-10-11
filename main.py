@@ -39,6 +39,39 @@ class PDFReader(QMainWindow):
         open_action.triggered.connect(self.open_pdf)
         toolbar.addAction(open_action)
 
+
+        #zoom control
+        toolbar.addSeparator()
+
+        zoomout = QAction("-", self)
+        zoomout.triggered.connect(self.zoomout)
+        toolbar.addAction(zoomout)
+
+        zoomout = QAction("+", self)
+        zoomout.triggered.connect(self.zoomin)
+        toolbar.addAction(zoomout)
+
+        zoomout = QAction("Fit to width", self)
+        zoomout.triggered.connect(self.fit_to_width)
+        toolbar.addAction(zoomout)
+
+
+    def zoomin(self):
+        self.viewer.setZoomMode(QPdfView.ZoomMode.Custom)
+        self.viewer.setZoomFactor(
+            min(self.viewer.zoomFactor() * 1.1, 5.0)
+        )
+
+    def zoomout(self):
+        self.viewer.setZoomMode(QPdfView.ZoomMode.Custom)
+        self.viewer.setZoomFactor(
+            max(self.viewer.zoomFactor() / 1.2, 0.25)
+        )
+
+
+    def fit_to_width(self):
+        self.viewer.setZoomMode(QPdfView.ZoomMode.FitToWidth)
+
     def open_pdf(self):
         path, _ = QFileDialog.getOpenFileName(
             self, 
