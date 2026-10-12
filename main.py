@@ -1,5 +1,5 @@
-
 import sys
+import os
 
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
@@ -7,8 +7,10 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QFileDialog,
     QMessageBox,
+    QStackedWidget,
 )
 
+from homepage import HomePage
 from smooth_pdf import SmoothPdfViewer
 
 
@@ -19,33 +21,51 @@ class PDFReader(QMainWindow):
         self.setWindowTitle("rt-PDF")
         self.resize(1000, 700)
 
-        # minapdf
+        # Home page and PDF viewer
+        self.home = HomePage(self)
         self.viewer = SmoothPdfViewer(self)
-        self.setCentralWidget(self.viewer)
 
-        
-        toolbar = self.addToolBar("File")
+        self.pages = QStackedWidget()
+        self.pages.addWidget(self.home)
+        self.pages.addWidget(self.viewer)
+
+        self.setCentralWidget(self.pages)
+        self.pages.setCurrentWidget(self.home)
+
+        # Connect homepage signals
+        self.home.openRequested.connect(self.open_pdf)
+        self.home.pdfSelected.connect(self.open_recent_pdf)
+
+        # File toolbar
+        file_toolbar = self.addToolBar("File")
+
         open_action = QAction("Open", self)
         open_action.triggered.connect(self.open_pdf)
-        toolbar.addAction(open_action)
+        file_toolbar.addAction(open_action)
 
-        toolbar = self.addToolBar("Smooth")
+        home_action = QAction("Home", self)
+        home_action.triggered.connect(self.show_home)
+        file_toolbar.addAction(home_action)
+
+        # Smooth scrolling toolbar
+        smooth_toolbar = self.addToolBar("Smooth")
+
         smooth_action = QAction("Smooth", self)
         smooth_action.setCheckable(True)
         smooth_action.setChecked(True)
         smooth_action.toggled.connect(
-            lambda checked: setattr(self.viewer, "smooth_scroll", checked)
+            lambda checked: setattr(
+                self.viewer, "smooth_scroll", checked
+            )
         )
-        toolbar.addAction(smooth_action)
+        smooth_toolbar.addAction(smooth_action)
 
-
-
-        # keyboshort
+        # Keyboard shortcuts
         zoom_in_action = QAction("Zoom In", self)
         zoom_in_action.setShortcut(QKeySequence.StandardKey.ZoomIn)
         zoom_in_action.triggered.connect(self.zoomin)
         self.addAction(zoom_in_action)
-        
+
         zoom_out_action = QAction("Zoom Out", self)
         zoom_out_action.setShortcut(QKeySequence.StandardKey.ZoomOut)
         zoom_out_action.triggered.connect(self.zoomout)
@@ -56,32 +76,41 @@ class PDFReader(QMainWindow):
         fit_width_action.triggered.connect(self.fit_to_width)
         self.addAction(fit_width_action)
 
-        # Zoooooooom
-        toolbar.addSeparator()
+        # Zoom toolbar controls
+        smooth_toolbar.addSeparator()
 
         zoom_out_button = QAction("-", self)
         zoom_out_button.triggered.connect(self.zoomout)
-        toolbar.addAction(zoom_out_button)
+        smooth_toolbar.addAction(zoom_out_button)
 
         zoom_in_button = QAction("+", self)
         zoom_in_button.triggered.connect(self.zoomin)
-        toolbar.addAction(zoom_in_button)
+        smooth_toolbar.addAction(zoom_in_button)
 
         fit_button = QAction("Fit to Width", self)
         fit_button.triggered.connect(self.fit_to_width)
-        toolbar.addAction(fit_button)
+        smooth_toolbar.addAction(fit_button)
 
+    # Zoom controls
     def zoomin(self):
-        self.viewer.zoomin(1.1)
+        if self.pages.currentWidget() == self.viewer:
+            self.viewer.zoomin(1.1)
 
     def zoomout(self):
-        self.viewer.zoomout(1.1)
+        if self.pages.currentWidget() == self.viewer:
+            self.viewer.zoomout(1.1)
 
     def fit_to_width(self):
-        self.viewer.fit_width()
+        if self.pages.currentWidget() == self.viewer:
+            self.viewer.fit_width()
 
+    # Return to homepage
+    def show_home(self):
+        self.home.refresh_recent_files()
+        self.pages.setCurrentWidget(self.home)
+        self.setWindowTitle("rt-PDF")
 
-
+    # Open PDF using file picker
     def open_pdf(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -90,18 +119,34 @@ class PDFReader(QMainWindow):
             "PDF Files (*.pdf)",
         )
 
-        if not path:
+        if path:
+            self.open_recent_pdf(path)
+
+    # Open a selected or recently opened PDF
+    def open_recent_pdf(self, path):
+        if not os.path.isfile(path):
+            QMessageBox.warning(
+                self,
+                "File Not Found",
+                "This PDF no longer exists.",
+            )
+            self.home.refresh_recent_files()
             return
 
         if not self.viewer.load(path):
             QMessageBox.warning(
                 self,
                 "Error",
-                "Can't open PDF",
+                "Can't open PDF.",
             )
             return
 
-        self.setWindowTitle(f"rt-PDF - {path.split('/')[-1]}")
+        # Save PDF in recent files
+        self.home.add_recent_file(path)
+
+        # Display the PDF
+        self.pages.setCurrentWidget(self.viewer)
+        self.setWindowTitle(f"rt-PDF - {os.path.basename(path)}")
 
 
 def main():
