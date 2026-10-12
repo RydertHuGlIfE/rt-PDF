@@ -8,10 +8,11 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMessageBox,
 )
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtPdf import QPdfDocument
 from PySide6.QtCore import QTimer
 from PySide6.QtPdfWidgets import QPdfView
+
 
 
 class PDFReader(QMainWindow):
@@ -41,6 +42,23 @@ class PDFReader(QMainWindow):
         open_action.triggered.connect(self.open_pdf)
         toolbar.addAction(open_action)
 
+    
+        zoom_in_action = QAction("Zoom In", self)
+        zoom_in_action.setShortcut(QKeySequence.StandardKey.ZoomIn)
+        zoom_in_action.triggered.connect(self.zoomin)
+        self.addAction(zoom_in_action)
+
+        # Zoom Out shortcut
+        zoom_out_action = QAction("Zoom Out", self)
+        zoom_out_action.setShortcut(QKeySequence.StandardKey.ZoomOut)
+        zoom_out_action.triggered.connect(self.zoomout)
+        self.addAction(zoom_out_action)
+
+        # Fit to Width shortcut
+        fit_width_action = QAction("Fit to Width", self)
+        fit_width_action.setShortcut(QKeySequence("Ctrl+0"))
+        fit_width_action.triggered.connect(self.fit_to_width)
+        self.addAction(fit_width_action)
 
         #zoom control
         toolbar.addSeparator()
@@ -56,8 +74,6 @@ class PDFReader(QMainWindow):
         zoomout = QAction("Fit to width", self)
         zoomout.triggered.connect(self.fit_to_width)
         toolbar.addAction(zoomout)
-
-
     
     def get_fit_zoom(self):
         page = self.document.pagePointSize(self.viewer.pageNavigator().currentPage())
@@ -92,6 +108,14 @@ class PDFReader(QMainWindow):
         self.viewer.setZoomMode(QPdfView.ZoomMode.FitToWidth)
 
 
+    
+
+
+
+
+
+
+    #semimain
     def open_pdf(self):
         path, _ = QFileDialog.getOpenFileName(
             self, 
