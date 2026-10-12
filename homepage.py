@@ -83,6 +83,7 @@ class HomePage(QWidget):
         if not path:
             return
 
+        path = os.path.abspath(path)
         self.recent_files = [
             p for p in self.recent_files if p != path
         ]

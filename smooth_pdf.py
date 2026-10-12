@@ -51,6 +51,7 @@ class SmoothPdfViewer(QAbstractScrollArea):
         self._sharp.setInterval(120)
         self._sharp.timeout.connect(self.viewport().update)
 
+        self.verticalScrollBar().sliderPressed.connect(self.scroll_timer.stop)
         self.verticalScrollBar().valueChanged.connect(self.viewport().update)
         self.horizontalScrollBar().valueChanged.connect(self.viewport().update)
 
@@ -234,6 +235,7 @@ class SmoothPdfViewer(QAbstractScrollArea):
             self.scroll_timer.stop()
             return
         self._pos += diff * (1 - math.exp(-dt / self.smooth_time))
+        self._pos = max(float(bar.minimum()), min(self._pos, float(bar.maximum())))
         bar.setValue(round(self._pos))
 
     def viewportEvent(self, event):

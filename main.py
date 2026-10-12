@@ -20,6 +20,7 @@ class PDFReader(QMainWindow):
 
         self.setWindowTitle("rt-PDF")
         self.resize(1000, 700)
+        self.setAcceptDrops(True)
 
         # Home page and PDF viewer
         self.home = HomePage(self)
@@ -148,12 +149,35 @@ class PDFReader(QMainWindow):
         self.pages.setCurrentWidget(self.viewer)
         self.setWindowTitle(f"rt-PDF - {os.path.basename(path)}")
 
+    # Drag and drop support
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.toLocalFile().lower().endswith(".pdf"):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dropEvent(self, event):
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if path.lower().endswith(".pdf") and os.path.isfile(path):
+                self.open_recent_pdf(path)
+                event.acceptProposedAction()
+                return
+
 
 def main():
     app = QApplication(sys.argv)
 
     window = PDFReader()
     window.show()
+
+    # Open PDF passed via CLI argument if present
+    if len(sys.argv) > 1:
+        cli_path = sys.argv[1]
+        if os.path.isfile(cli_path):
+            window.open_recent_pdf(os.path.abspath(cli_path))
 
     sys.exit(app.exec())
 
