@@ -1,19 +1,49 @@
 import subprocess
 import symtable
-import sys 
 
+import sys
+
+from PySide6.QtCore import Qt, QEvent
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
     QFileDialog,
     QMessageBox,
 )
-from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtPdf import QPdfDocument
-from PySide6.QtCore import QTimer
 from PySide6.QtPdfWidgets import QPdfView
 
 
+class PDFView(QPdfView):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.gesture_zoom = 1.0
+
+    def event(self, event):
+        if event.type() == QEvent.Type.NativeGesture:
+            if (
+                event.gestureType()
+                == Qt.NativeGestureType.ZoomNativeGesture
+            ):
+                factor = 1.0 + event.value()
+
+                if factor > 0:
+                    if self.zoomMode() == QPdfView.ZoomMode.FitToWidth:
+                        self.gesture_zoom = self.zoomFactor()
+
+                    self.gesture_zoom = max(
+                        0.25,
+                        min(self.gesture_zoom * factor, 5.0),
+                    )
+
+                    self.setZoomMode(QPdfView.ZoomMode.Custom)
+                    self.setZoomFactor(self.gesture_zoom)
+
+                    event.accept()
+                    return True
+
+        return super().event(event)
 
 class PDFReader(QMainWindow):
     def __init__(self):
@@ -24,7 +54,7 @@ class PDFReader(QMainWindow):
         self.customZoom = 1.0
 
         self.document = QPdfDocument(self)
-        self.viewer = QPdfView(self)
+        self.viewer = PDFView(self)
         self.viewer.setDocument(self.document)
 
         #vertical+contscroll
@@ -42,19 +72,19 @@ class PDFReader(QMainWindow):
         open_action.triggered.connect(self.open_pdf)
         toolbar.addAction(open_action)
 
-    
+
         zoom_in_action = QAction("Zoom In", self)
         zoom_in_action.setShortcut(QKeySequence.StandardKey.ZoomIn)
-        zoom_in_action.triggered.connect(self.zoomin)
+        zoom_in_action.triggered.connect(self.zoomin)     #routing this action from this to the button action in linee 67ish 6-7
         self.addAction(zoom_in_action)
 
-        # Zoom Out shortcut
+      
         zoom_out_action = QAction("Zoom Out", self)
         zoom_out_action.setShortcut(QKeySequence.StandardKey.ZoomOut)
         zoom_out_action.triggered.connect(self.zoomout)
         self.addAction(zoom_out_action)
 
-        # Fit to Width shortcut
+     
         fit_width_action = QAction("Fit to Width", self)
         fit_width_action.setShortcut(QKeySequence("Ctrl+0"))
         fit_width_action.triggered.connect(self.fit_to_width)
