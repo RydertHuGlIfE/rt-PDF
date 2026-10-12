@@ -5,10 +5,7 @@ from PySide6.QtPdf import QPdfDocument
 
 
 class SmoothPdfViewer(QAbstractScrollArea):
-    """Zoom ke dauraan purani rendered image scale hoti hai (instant, no flicker).
-    Zoom rukne ke ~120ms baad pages sharp re-render hote hain.
-
-    Public API:
+    """Public API:
         load(path) -> bool
         zoomin(value=1.1)     # zoom *= value
         zoomout(value=1.1)    # zoom /= value
