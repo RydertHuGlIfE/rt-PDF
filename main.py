@@ -29,6 +29,17 @@ class PDFReader(QMainWindow):
         open_action.triggered.connect(self.open_pdf)
         toolbar.addAction(open_action)
 
+        toolbar = self.addToolBar("Smooth")
+        smooth_action = QAction("Smooth", self)
+        smooth_action.setCheckable(True)
+        smooth_action.setChecked(True)
+        smooth_action.toggled.connect(
+            lambda checked: setattr(self.viewer, "smooth_scroll", checked)
+        )
+        toolbar.addAction(smooth_action)
+
+
+
         # keyboshort
         zoom_in_action = QAction("Zoom In", self)
         zoom_in_action.setShortcut(QKeySequence.StandardKey.ZoomIn)
@@ -68,6 +79,8 @@ class PDFReader(QMainWindow):
 
     def fit_to_width(self):
         self.viewer.fit_width()
+
+
 
     def open_pdf(self):
         path, _ = QFileDialog.getOpenFileName(
