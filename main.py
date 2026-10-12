@@ -99,7 +99,7 @@ class PDFReader(QMainWindow):
 
         zoomin = QAction("+", self)
         zoomin.triggered.connect(self.zoomin)
-        toolbar.addAction(zoomout)
+        toolbar.addAction(zoomin)
 
         zoomout = QAction("Fit to width", self)
         zoomout.triggered.connect(self.fit_to_width)
@@ -130,7 +130,7 @@ class PDFReader(QMainWindow):
 
 
     def zoomout(self):
-        self.viewer.zoomout(1/1.1)
+        self.viewer.zoomout(1.1)
 
 
     def fit_to_width(self):
@@ -159,8 +159,6 @@ class PDFReader(QMainWindow):
 
         
         self.setWindowTitle(f"rt-PDF - {path.split('/')[-1]}")
-
-
 
 
 def main():
