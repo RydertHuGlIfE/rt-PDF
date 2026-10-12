@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QAction
 from PySide6.QtPdf import QPdfDocument
+from PySide6.QtCore import QTimer
 from PySide6.QtPdfWidgets import QPdfView
 
 
@@ -19,6 +20,7 @@ class PDFReader(QMainWindow):
         
         self.setWindowTitle("rt-PDF")
         self.resize(1000, 700)
+        self.customZoom = 1.0
 
         self.document = QPdfDocument(self)
         self.viewer = QPdfView(self)
@@ -56,21 +58,39 @@ class PDFReader(QMainWindow):
         toolbar.addAction(zoomout)
 
 
+    
+    def get_fit_zoom(self):
+        page = self.document.pagePointSize(self.viewer.pageNavigator().currentPage())
+        viewport_width = self.viewer.viewport().width()
+
+        if page.width() <= 0:
+            return 1.0
+        return viewport_width / page.width()
+
+
     def zoomin(self):
+        if self.viewer.zoomMode() == QPdfView.ZoomMode.FitToWidth:
+            self.customZoom = self.get_fit_zoom()
+
+        self.customZoom = min(self.customZoom * 1.1, 5.0)
+
         self.viewer.setZoomMode(QPdfView.ZoomMode.Custom)
-        self.viewer.setZoomFactor(
-            min(self.viewer.zoomFactor() * 1.1, 5.0)
-        )
+        self.viewer.setZoomFactor(self.customZoom)
+
 
     def zoomout(self):
+        if self.viewer.zoomMode() == QPdfView.ZoomMode.FitToWidth:
+            self.customZoom = self.get_fit_zoom()
+
+        self.customZoom = max(self.customZoom / 1.2, 0.25)
+
         self.viewer.setZoomMode(QPdfView.ZoomMode.Custom)
-        self.viewer.setZoomFactor(
-            max(self.viewer.zoomFactor() / 1.2, 0.25)
-        )
+        self.viewer.setZoomFactor(self.customZoom)
 
 
     def fit_to_width(self):
         self.viewer.setZoomMode(QPdfView.ZoomMode.FitToWidth)
+
 
     def open_pdf(self):
         path, _ = QFileDialog.getOpenFileName(
