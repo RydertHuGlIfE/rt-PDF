@@ -1,9 +1,11 @@
 import math
 
-from PySide6.QtCore import Qt, QEvent, QTimer, QSize, QRect, QElapsedTimer
+from PySide6.QtCore import Qt, QEvent, QTimer, QSize, QRect, QRectF, QPointF, QElapsedTimer
 from PySide6.QtGui import QPainter, QColor
 from PySide6.QtWidgets import QAbstractScrollArea
 from PySide6.QtPdf import QPdfDocument
+
+from annotation import ToolType, AnnotationStroke, AnnotationManager
 
 
 class SmoothPdfViewer(QAbstractScrollArea):
@@ -33,11 +35,22 @@ class SmoothPdfViewer(QAbstractScrollArea):
         self._total_w = 0
         self._visible = set()
 
+        # Annotations
+        self.ann_manager = AnnotationManager()
+        self.current_tool = ToolType.HAND
+        self.current_color = QColor("#ef4444")
+        self.current_width = 3.0
+        self.current_opacity = 1.0
+        self._current_stroke = None
+        self._drawing_page = None
+        self._start_pt = None
+        self.ann_toolbar = None
+
         # smooth scroll
         self.smooth_scroll = True
         self.mouse_speed = 10.0    # mouse wheel sensitivity
         self.touch_speed = 10.0    # touchpad sensitivity
-        self.smooth_time = 120    # ms, bada = zyada dheere ruke
+        self.smooth_time = 120    # ms, bada = stops slowly
         self._pos = 0.0
         self.target_scroll = 0.0
         self._clock = QElapsedTimer()
@@ -63,6 +76,7 @@ class SmoothPdfViewer(QAbstractScrollArea):
         self._cache.clear()
         self.fit_width()
         self.verticalScrollBar().setValue(0)
+        self.ann_manager.load_from_pdf(path)
         return True
 
     def zoomin(self, value=1.1, anchor=None):
@@ -97,9 +111,55 @@ class SmoothPdfViewer(QAbstractScrollArea):
         self._sharp.start()
         self.viewport().update()
 
+    # Annotation controls
+    def set_tool(self, tool: ToolType):
+        self.current_tool = tool
+        if tool == ToolType.HAND:
+            self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+        elif tool == ToolType.ERASER:
+            self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+        elif tool == ToolType.TEXT:
+            self.viewport().setCursor(Qt.CursorShape.IBeamCursor)
+        else:
+            self.viewport().setCursor(Qt.CursorShape.CrossCursor)
+
+    def set_color(self, color: QColor):
+        self.current_color = color
+
+    def set_stroke_width(self, width: float):
+        self.current_width = width
+
+    def set_opacity(self, opacity: float):
+        self.current_opacity = opacity
+
+    def undo(self):
+        self.ann_manager.undo()
+        self.viewport().update()
+
+    def redo(self):
+        self.ann_manager.redo()
+        self.viewport().update()
+
     # ---------- internals ----------
     def _dpi_scale(self):
         return self.logicalDpiX() / 72.0
+
+    def _screen_to_page(self, pos):
+        vy = self.verticalScrollBar().value()
+        vh, vw = self.viewport().height(), self.viewport().width()
+        xoff = max((vw - self._total_w) / 2, 0) - self.horizontalScrollBar().value()
+
+        for i, (top, w, h) in enumerate(self._tops):
+            page_x = round(xoff + (self._total_w - w) / 2)
+            page_y = round(top - vy)
+            rect = QRect(page_x, page_y, round(w), round(h))
+            if rect.contains(pos):
+                pts = self.doc.pagePointSize(i)
+                if pts.width() > 0 and pts.height() > 0:
+                    pt_x = (pos.x() - rect.x()) / rect.width() * pts.width()
+                    pt_y = (pos.y() - rect.y()) / rect.height() * pts.height()
+                    return i, QPointF(pt_x, pt_y), rect
+        return None, None, None
 
     def _apply_fit(self):
         n = self.doc.pageCount()
@@ -176,12 +236,21 @@ class SmoothPdfViewer(QAbstractScrollArea):
             visible.add(i)
             rect = QRect(round(xoff + (self._total_w - w) / 2),
                          round(top - vy), round(w), round(h))
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
             p.fillRect(rect, QColor("white"))
             img = self._get_image(i, rect.width(), rect.height())
             if img is not None:
                 stale = abs(img.width() / img.devicePixelRatio() - rect.width()) > 1
                 p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, stale)
                 p.drawImage(rect, img)
+
+            # Render annotations on top of page
+            pts = self.doc.pagePointSize(i)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            for stroke in self.ann_manager.pages_annotations.get(i, []):
+                stroke.render(p, QRectF(rect), pts)
+            if self._current_stroke is not None and self._drawing_page == i:
+                self._current_stroke.render(p, QRectF(rect), pts)
         p.end()
 
         self._visible = visible
@@ -196,6 +265,123 @@ class SmoothPdfViewer(QAbstractScrollArea):
             self._apply_fit()
         else:
             self._relayout()
+        if self.ann_toolbar is not None:
+            self.ann_toolbar.adjustSize()
+            self.ann_toolbar.move(
+                max(10, (self.width() - self.ann_toolbar.width()) // 2),
+                20
+            )
+
+    def mousePressEvent(self, event):
+        if self.current_tool == ToolType.HAND:
+            super().mousePressEvent(event)
+            return
+
+        if event.button() == Qt.MouseButton.LeftButton:
+            page, pt, rect = self._screen_to_page(event.pos())
+            if page is not None and pt is not None:
+                if self.current_tool == ToolType.ERASER:
+                    if self.ann_manager.erase_at(page, pt):
+                        self.viewport().update()
+                elif self.current_tool in (ToolType.PEN, ToolType.HIGHLIGHTER):
+                    self._drawing_page = page
+                    self._current_stroke = AnnotationStroke(
+                        tool=self.current_tool,
+                        page_index=page,
+                        points=[pt],
+                        color=self.current_color,
+                        width=self.current_width,
+                        opacity=self.current_opacity,
+                    )
+                    self.viewport().update()
+                elif self.current_tool == ToolType.RECTANGLE:
+                    self._drawing_page = page
+                    self._start_pt = pt
+                    self._current_stroke = AnnotationStroke(
+                        tool=self.current_tool,
+                        page_index=page,
+                        color=self.current_color,
+                        width=self.current_width,
+                        opacity=self.current_opacity,
+                        rect=QRectF(pt, pt),
+                    )
+                    self.viewport().update()
+                elif self.current_tool == ToolType.TEXT:
+                    from PySide6.QtWidgets import QInputDialog
+                    text, ok = QInputDialog.getText(self, "Add Text", "Enter text:")
+                    if ok and text.strip():
+                        stroke = AnnotationStroke(
+                            tool=self.current_tool,
+                            page_index=page,
+                            points=[pt],
+                            text=text.strip(),
+                            color=self.current_color,
+                            width=self.current_width,
+                            opacity=self.current_opacity,
+                            font_size=max(10.0, self.current_width * 3.5),
+                        )
+                        self.ann_manager.add_stroke(stroke)
+                        self.viewport().update()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.current_tool == ToolType.HAND:
+            super().mouseMoveEvent(event)
+            return
+
+        if self._current_stroke is not None and self._drawing_page is not None:
+            page_i = self._drawing_page
+            if 0 <= page_i < len(self._tops):
+                top, w, h = self._tops[page_i]
+                vy = self.verticalScrollBar().value()
+                vw = self.viewport().width()
+                xoff = max((vw - self._total_w) / 2, 0) - self.horizontalScrollBar().value()
+                rect = QRect(round(xoff + (self._total_w - w) / 2), round(top - vy), round(w), round(h))
+                pts = self.doc.pagePointSize(page_i)
+                if pts.width() > 0 and pts.height() > 0:
+                    pt_x = (event.pos().x() - rect.x()) / max(rect.width(), 1) * pts.width()
+                    pt_y = (event.pos().y() - rect.y()) / max(rect.height(), 1) * pts.height()
+                    curr_pt = QPointF(pt_x, pt_y)
+                    if self.current_tool == ToolType.RECTANGLE and self._start_pt:
+                        x = min(self._start_pt.x(), curr_pt.x())
+                        y = min(self._start_pt.y(), curr_pt.y())
+                        rw = abs(curr_pt.x() - self._start_pt.x())
+                        rh = abs(curr_pt.y() - self._start_pt.y())
+                        self._current_stroke.rect = QRectF(x, y, rw, rh)
+                    else:
+                        self._current_stroke.points.append(curr_pt)
+                    self.viewport().update()
+            event.accept()
+        elif self.current_tool == ToolType.ERASER and (event.buttons() & Qt.MouseButton.LeftButton):
+            page, pt, _ = self._screen_to_page(event.pos())
+            if page is not None and pt is not None:
+                if self.ann_manager.erase_at(page, pt):
+                    self.viewport().update()
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self.current_tool == ToolType.HAND:
+            super().mouseReleaseEvent(event)
+            return
+
+        if event.button() == Qt.MouseButton.LeftButton and self._current_stroke is not None:
+            if self.current_tool == ToolType.RECTANGLE and self._current_stroke.rect:
+                if self._current_stroke.rect.width() > 2 or self._current_stroke.rect.height() > 2:
+                    self.ann_manager.add_stroke(self._current_stroke)
+            elif len(self._current_stroke.points) > 1:
+                self.ann_manager.add_stroke(self._current_stroke)
+
+            self._current_stroke = None
+            self._drawing_page = None
+            self._start_pt = None
+            self.viewport().update()
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
 
     def wheelEvent(self, event):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:

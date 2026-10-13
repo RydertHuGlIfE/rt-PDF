@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 
 from homepage import HomePage
 from smooth_pdf import SmoothPdfViewer
+from annotation import AnnotationToolbar, ToolType
 
 
 class PDFReader(QMainWindow):
@@ -33,6 +34,19 @@ class PDFReader(QMainWindow):
         self.setCentralWidget(self.pages)
         self.pages.setCurrentWidget(self.home)
 
+        self.current_pdf_path = None
+
+        # Floating annotation toolbar positioned over viewer
+        self.ann_toolbar = AnnotationToolbar(self.viewer)
+        self.viewer.ann_toolbar = self.ann_toolbar
+        self.ann_toolbar.toolChanged.connect(self.viewer.set_tool)
+        self.ann_toolbar.colorChanged.connect(self.viewer.set_color)
+        self.ann_toolbar.widthChanged.connect(self.viewer.set_stroke_width)
+        self.ann_toolbar.opacityChanged.connect(self.viewer.set_opacity)
+        self.ann_toolbar.undoRequested.connect(self.viewer.undo)
+        self.ann_toolbar.redoRequested.connect(self.viewer.redo)
+        self.ann_toolbar.hide()
+
         # Connect homepage signals
         self.home.openRequested.connect(self.open_pdf)
         self.home.pdfSelected.connect(self.open_recent_pdf)
@@ -43,6 +57,16 @@ class PDFReader(QMainWindow):
         open_action = QAction("Open", self)
         open_action.triggered.connect(self.open_pdf)
         file_toolbar.addAction(open_action)
+
+        save_action = QAction("Save", self)
+        save_action.setShortcut(QKeySequence.StandardKey.Save)
+        save_action.triggered.connect(self.save_pdf)
+        file_toolbar.addAction(save_action)
+
+        save_as_action = QAction("Save As", self)
+        save_as_action.setShortcut(QKeySequence.StandardKey.SaveAs)
+        save_as_action.triggered.connect(self.save_as_pdf)
+        file_toolbar.addAction(save_as_action)
 
         home_action = QAction("Home", self)
         home_action.triggered.connect(self.show_home)
@@ -77,6 +101,17 @@ class PDFReader(QMainWindow):
         fit_width_action.triggered.connect(self.fit_to_width)
         self.addAction(fit_width_action)
 
+        # Undo / Redo shortcuts
+        undo_action = QAction("Undo", self)
+        undo_action.setShortcut(QKeySequence.StandardKey.Undo)
+        undo_action.triggered.connect(self.viewer.undo)
+        self.addAction(undo_action)
+
+        redo_action = QAction("Redo", self)
+        redo_action.setShortcut(QKeySequence.StandardKey.Redo)
+        redo_action.triggered.connect(self.viewer.redo)
+        self.addAction(redo_action)
+
         # Zoom toolbar controls
         smooth_toolbar.addSeparator()
 
@@ -107,6 +142,7 @@ class PDFReader(QMainWindow):
 
     # Return to homepage
     def show_home(self):
+        self.ann_toolbar.hide()
         self.home.refresh_recent_files()
         self.pages.setCurrentWidget(self.home)
         self.setWindowTitle("rt-PDF")
@@ -144,10 +180,44 @@ class PDFReader(QMainWindow):
 
         # Save PDF in recent files
         self.home.add_recent_file(path)
+        self.current_pdf_path = path
 
         # Display the PDF
         self.pages.setCurrentWidget(self.viewer)
         self.setWindowTitle(f"rt-PDF - {os.path.basename(path)}")
+        self.ann_toolbar.show()
+        self.ann_toolbar.raise_()
+        self.ann_toolbar.adjustSize()
+        self.ann_toolbar.move(
+            max(10, (self.viewer.width() - self.ann_toolbar.width()) // 2),
+            20
+        )
+
+    def save_pdf(self):
+        if not self.current_pdf_path:
+            return
+        if self.viewer.ann_manager.save_to_pdf(self.current_pdf_path, self.current_pdf_path):
+            QMessageBox.information(self, "Saved", "Annotations saved successfully to the PDF!")
+        else:
+            QMessageBox.warning(self, "Error", "Failed to save annotations to the PDF.")
+
+    def save_as_pdf(self):
+        if not self.current_pdf_path:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save PDF As",
+            self.current_pdf_path,
+            "PDF Files (*.pdf)",
+        )
+        if path:
+            if self.viewer.ann_manager.save_to_pdf(self.current_pdf_path, path):
+                self.current_pdf_path = path
+                self.home.add_recent_file(path)
+                self.setWindowTitle(f"rt-PDF - {os.path.basename(path)}")
+                QMessageBox.information(self, "Saved", f"Saved successfully to:\n{os.path.basename(path)}")
+            else:
+                QMessageBox.warning(self, "Error", "Failed to save annotations.")
 
     # Drag and drop support
     def dragEnterEvent(self, event):
