@@ -10,12 +10,15 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QStackedWidget,
     QSplitter,
+    QWidget,
+    QVBoxLayout,
 )
 
 from homepage import HomePage
 from smooth_pdf import SmoothPdfViewer
 from annotation import AnnotationToolbar, ToolType
 from sidebar import ThumbnailSidebar
+from bottom_bar import BottomBar  # rename if your BottomBar file has another module name
 
 
 class PDFReader(QMainWindow):
@@ -26,10 +29,11 @@ class PDFReader(QMainWindow):
         self.resize(1000, 700)
         self.setAcceptDrops(True)
 
-        # Home page, sidebar, and PDF viewer
+        # Home page, sidebar, PDF viewer, and bottom bar
         self.home = HomePage(self)
         self.viewer = SmoothPdfViewer(self)
         self.sidebar = ThumbnailSidebar(self)
+        self.bottom_bar = BottomBar(self)
 
         # Splitter to hold retractable sidebar and viewer
         self.viewer_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -48,9 +52,17 @@ class PDFReader(QMainWindow):
             }
         """)
 
+        # Viewer page = splitter on top, bottom bar underneath
+        self.viewer_page = QWidget()
+        viewer_layout = QVBoxLayout(self.viewer_page)
+        viewer_layout.setContentsMargins(0, 0, 0, 0)
+        viewer_layout.setSpacing(0)
+        viewer_layout.addWidget(self.viewer_splitter, 1)
+        viewer_layout.addWidget(self.bottom_bar, 0)
+
         self.pages = QStackedWidget()
         self.pages.addWidget(self.home)
-        self.pages.addWidget(self.viewer_splitter)
+        self.pages.addWidget(self.viewer_page)
 
         self.setCentralWidget(self.pages)
         self.pages.setCurrentWidget(self.home)
@@ -68,9 +80,12 @@ class PDFReader(QMainWindow):
         self.ann_toolbar.redoRequested.connect(self.viewer.redo)
         self.ann_toolbar.hide()
 
-        # Connect sidebar and viewer signals
+        # Connect sidebar, viewer, and bottom bar signals
         self.sidebar.pageSelected.connect(self.viewer.scroll_to_page)
         self.viewer.pageChanged.connect(self.sidebar.set_current_page)
+        self.viewer.pageChanged.connect(self.bottom_bar.set_page)
+        self.bottom_bar.prevPageRequested.connect(self.viewer.prev_page)
+        self.bottom_bar.nextPageRequested.connect(self.viewer.next_page)
 
         # Connect homepage signals
         self.home.openRequested.connect(self.open_pdf)
@@ -218,11 +233,12 @@ class PDFReader(QMainWindow):
         self.home.add_recent_file(path)
         self.current_pdf_path = path
 
-        # Load thumbnails into sidebar
+        # Load thumbnails into sidebar and page count into bottom bar
         self.sidebar.load_document(self.viewer.doc)
+        self.bottom_bar.set_document(self.viewer.doc.pageCount())
 
         # Display the PDF with sidebar
-        self.pages.setCurrentWidget(self.viewer_splitter)
+        self.pages.setCurrentWidget(self.viewer_page)
         self.setWindowTitle(f"rt-PDF - {os.path.basename(path)}")
         self.ann_toolbar.show()
         self.ann_toolbar.raise_()
