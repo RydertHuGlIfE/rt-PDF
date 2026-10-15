@@ -1,6 +1,7 @@
 import sys
 import os
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -8,11 +9,13 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMessageBox,
     QStackedWidget,
+    QSplitter,
 )
 
 from homepage import HomePage
 from smooth_pdf import SmoothPdfViewer
 from annotation import AnnotationToolbar, ToolType
+from sidebar import ThumbnailSidebar
 
 
 class PDFReader(QMainWindow):
@@ -23,13 +26,31 @@ class PDFReader(QMainWindow):
         self.resize(1000, 700)
         self.setAcceptDrops(True)
 
-        # Home page and PDF viewer
+        # Home page, sidebar, and PDF viewer
         self.home = HomePage(self)
         self.viewer = SmoothPdfViewer(self)
+        self.sidebar = ThumbnailSidebar(self)
+
+        # Splitter to hold retractable sidebar and viewer
+        self.viewer_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.viewer_splitter.addWidget(self.sidebar)
+        self.viewer_splitter.addWidget(self.viewer)
+        self.viewer_splitter.setCollapsible(0, True)
+        self.viewer_splitter.setCollapsible(1, False)
+        self.viewer_splitter.setSizes([190, 810])
+        self.viewer_splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: #2b2b2e;
+                width: 2px;
+            }
+            QSplitter::handle:hover {
+                background-color: #3b82f6;
+            }
+        """)
 
         self.pages = QStackedWidget()
         self.pages.addWidget(self.home)
-        self.pages.addWidget(self.viewer)
+        self.pages.addWidget(self.viewer_splitter)
 
         self.setCentralWidget(self.pages)
         self.pages.setCurrentWidget(self.home)
@@ -47,12 +68,24 @@ class PDFReader(QMainWindow):
         self.ann_toolbar.redoRequested.connect(self.viewer.redo)
         self.ann_toolbar.hide()
 
+        # Connect sidebar and viewer signals
+        self.sidebar.pageSelected.connect(self.viewer.scroll_to_page)
+        self.viewer.pageChanged.connect(self.sidebar.set_current_page)
+
         # Connect homepage signals
         self.home.openRequested.connect(self.open_pdf)
         self.home.pdfSelected.connect(self.open_recent_pdf)
 
         # File toolbar
         file_toolbar = self.addToolBar("File")
+
+        self.sidebar_action = QAction("Sidebar", self)
+        self.sidebar_action.setCheckable(True)
+        self.sidebar_action.setChecked(True)
+        self.sidebar_action.setShortcut(QKeySequence("F4"))
+        self.sidebar_action.toggled.connect(self.toggle_sidebar)
+        file_toolbar.addAction(self.sidebar_action)
+        self.sidebar.visibilityToggled.connect(self.sidebar_action.setChecked)
 
         open_action = QAction("Open", self)
         open_action.triggered.connect(self.open_pdf)
@@ -127,17 +160,20 @@ class PDFReader(QMainWindow):
         fit_button.triggered.connect(self.fit_to_width)
         smooth_toolbar.addAction(fit_button)
 
+    def toggle_sidebar(self, checked):
+        self.sidebar.setVisible(checked)
+
     # Zoom controls
     def zoomin(self):
-        if self.pages.currentWidget() == self.viewer:
+        if self.pages.currentWidget() != self.home:
             self.viewer.zoomin(1.1)
 
     def zoomout(self):
-        if self.pages.currentWidget() == self.viewer:
+        if self.pages.currentWidget() != self.home:
             self.viewer.zoomout(1.1)
 
     def fit_to_width(self):
-        if self.pages.currentWidget() == self.viewer:
+        if self.pages.currentWidget() != self.home:
             self.viewer.fit_width()
 
     # Return to homepage
@@ -182,8 +218,11 @@ class PDFReader(QMainWindow):
         self.home.add_recent_file(path)
         self.current_pdf_path = path
 
-        # Display the PDF
-        self.pages.setCurrentWidget(self.viewer)
+        # Load thumbnails into sidebar
+        self.sidebar.load_document(self.viewer.doc)
+
+        # Display the PDF with sidebar
+        self.pages.setCurrentWidget(self.viewer_splitter)
         self.setWindowTitle(f"rt-PDF - {os.path.basename(path)}")
         self.ann_toolbar.show()
         self.ann_toolbar.raise_()

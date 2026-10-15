@@ -1,6 +1,6 @@
 import math
 
-from PySide6.QtCore import Qt, QEvent, QTimer, QSize, QRect, QRectF, QPointF, QElapsedTimer
+from PySide6.QtCore import Qt, QEvent, QTimer, QSize, QRect, QRectF, QPointF, QElapsedTimer, Signal
 from PySide6.QtGui import QPainter, QColor
 from PySide6.QtWidgets import QAbstractScrollArea
 from PySide6.QtPdf import QPdfDocument
@@ -15,8 +15,11 @@ class SmoothPdfViewer(QAbstractScrollArea):
         zoomout(value=1.1)    # zoom /= value
         set_zoom(z)
         fit_width()
+        scroll_to_page(page_index)
         smooth_scroll = True/False
     """
+
+    pageChanged = Signal(int)
 
     MIN_ZOOM = 0.25
     MAX_ZOOM = 5.0
@@ -45,6 +48,7 @@ class SmoothPdfViewer(QAbstractScrollArea):
         self._drawing_page = None
         self._start_pt = None
         self.ann_toolbar = None
+        self._current_page_idx = -1
 
         # smooth scroll
         self.smooth_scroll = True
@@ -77,7 +81,17 @@ class SmoothPdfViewer(QAbstractScrollArea):
         self.fit_width()
         self.verticalScrollBar().setValue(0)
         self.ann_manager.load_from_pdf(path)
+        self._current_page_idx = 0
+        self.pageChanged.emit(0)
         return True
+
+    def next_page(self):
+        if self._current_page_idx + 1 < self.doc.pageCount():
+            self.scroll_to_page(self._current_page_idx + 1)
+
+    def prev_page(self):
+        if self._current_page_idx - 1 >= 0:
+            self.scroll_to_page(self._current_page_idx - 1)
 
     def zoomin(self, value=1.1, anchor=None):
         self.set_zoom(self.zoom * value, anchor)
@@ -110,6 +124,22 @@ class SmoothPdfViewer(QAbstractScrollArea):
         self._apply_fit()
         self._sharp.start()
         self.viewport().update()
+
+    def scroll_to_page(self, page_index: int):
+        if 0 <= page_index < len(self._tops):
+            top_y, _, _ = self._tops[page_index]
+            target = max(0.0, float(top_y - self.GAP))
+            bar = self.verticalScrollBar()
+            target = max(float(bar.minimum()), min(target, float(bar.maximum())))
+            if self.smooth_scroll:
+                self.scroll_timer.stop()
+                self._pos = float(bar.value())
+                self.target_scroll = target
+                self._clock.start()
+                self.scroll_timer.start()
+            else:
+                bar.setValue(round(target))
+            self.viewport().update()
 
     # Annotation controls
     def set_tool(self, tool: ToolType):
@@ -252,6 +282,19 @@ class SmoothPdfViewer(QAbstractScrollArea):
             if self._current_stroke is not None and self._drawing_page == i:
                 self._current_stroke.render(p, QRectF(rect), pts)
         p.end()
+
+        # Emit active page change for sidebar synchronization
+        mid_y = vy + vh // 3
+        active_page = None
+        for i, (top, w, h) in enumerate(self._tops):
+            if top <= mid_y <= top + h:
+                active_page = i
+                break
+        if active_page is None and visible:
+            active_page = min(visible)
+        if active_page is not None and active_page != self._current_page_idx:
+            self._current_page_idx = active_page
+            self.pageChanged.emit(active_page)
 
         self._visible = visible
         if len(self._cache) > 30:
