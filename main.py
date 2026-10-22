@@ -2,7 +2,7 @@ import sys
 import os
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QKeySequence, QPalette, QColor
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -28,6 +28,73 @@ class PDFReader(QMainWindow):
         self.setWindowTitle("rt-PDF")
         self.resize(1000, 700)
         self.setAcceptDrops(True)
+
+        # Apply global dark theme stylesheet
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #121214;
+                color: #e5e5ea;
+            }
+            QToolBar {
+                background-color: #18181b;
+                border-bottom: 1px solid #27272a;
+                spacing: 4px;
+                padding: 4px 8px;
+            }
+            QToolBar::separator {
+                width: 1px;
+                background-color: #333338;
+                margin: 4px 6px;
+            }
+            QToolButton {
+                background-color: transparent;
+                color: #e5e5ea;
+                font-size: 13px;
+                font-weight: 500;
+                padding: 5px 12px;
+                border-radius: 6px;
+                border: 1px solid transparent;
+            }
+            QToolButton:hover {
+                background-color: #27272a;
+                color: #ffffff;
+                border: 1px solid #3f3f46;
+            }
+            QToolButton:pressed {
+                background-color: #1f2937;
+            }
+            QToolButton:checked {
+                background-color: #2563eb;
+                color: #ffffff;
+                border: 1px solid #3b82f6;
+            }
+            QStackedWidget {
+                background-color: #121214;
+            }
+            QMessageBox {
+                background-color: #18181b;
+            }
+            QMessageBox QLabel {
+                color: #e5e5ea;
+                font-size: 13px;
+            }
+            QMessageBox QPushButton {
+                background-color: #27272a;
+                color: #ffffff;
+                font-size: 13px;
+                padding: 6px 18px;
+                border-radius: 6px;
+                border: 1px solid #3f3f46;
+            }
+            QMessageBox QPushButton:hover {
+                background-color: #2563eb;
+                border-color: #3b82f6;
+            }
+            QDialog {
+                background-color: #18181b;
+                color: #e5e5ea;
+            }
+        """)
 
         # Home page, sidebar, PDF viewer, and bottom bar
         self.home = HomePage(self)
@@ -294,6 +361,22 @@ class PDFReader(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+
+    # Set application-wide dark palette so all native dialogs match
+    palette = QPalette()
+    palette.setColor(QPalette.ColorRole.Window, QColor("#121214"))
+    palette.setColor(QPalette.ColorRole.WindowText, QColor("#e5e5ea"))
+    palette.setColor(QPalette.ColorRole.Base, QColor("#18181b"))
+    palette.setColor(QPalette.ColorRole.AlternateBase, QColor("#1e1e22"))
+    palette.setColor(QPalette.ColorRole.ToolTipBase, QColor("#27272a"))
+    palette.setColor(QPalette.ColorRole.ToolTipText, QColor("#ffffff"))
+    palette.setColor(QPalette.ColorRole.Text, QColor("#e5e5ea"))
+    palette.setColor(QPalette.ColorRole.Button, QColor("#222226"))
+    palette.setColor(QPalette.ColorRole.ButtonText, QColor("#e5e5ea"))
+    palette.setColor(QPalette.ColorRole.BrightText, QColor("#ffffff"))
+    palette.setColor(QPalette.ColorRole.Highlight, QColor("#2563eb"))
+    palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
+    app.setPalette(palette)
 
     window = PDFReader()
     window.show()

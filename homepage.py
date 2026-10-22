@@ -14,9 +14,19 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QFrame,
     QButtonGroup,
+    QDialog,
 )
+from pypdf import PdfReader
 
-from pdf_ops import merge_pdf, split_pdf, convert_imagestopdf
+from pdf_ops import (
+    merge_pdf,
+    split_pdf,
+    split_pdf_at_page,
+    split_pdf_by_cut_points,
+    split_pdf_by_ranges,
+    convert_imagestopdf,
+)
+from split_dialog import SplitDialog
 
 
 class ToolCard(QFrame):
@@ -24,6 +34,7 @@ class ToolCard(QFrame):
 
     def __init__(self, title_text, desc_text, action_text="Select", parent=None):
         super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setStyleSheet("""
             ToolCard {
@@ -96,6 +107,13 @@ class HomePage(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setAutoFillBackground(True)
+        self.setStyleSheet("""
+            HomePage {
+                background-color: #121214;
+            }
+        """)
 
         self.settings = QSettings("rt-PDF", "rt-PDF")
         self.recent_files = self.settings.value(
@@ -253,7 +271,7 @@ class HomePage(QWidget):
         # 2. Split PDF Tool
         split_card = ToolCard(
             title_text="Split PDF",
-            desc_text="Separate each page of a PDF document into individual files.",
+            desc_text="Split PDF into multiple parts at any page (e.g. before & after page 29), custom ranges, or individual pages.",
             action_text="Split File",
             parent=tools_page
         )
@@ -376,23 +394,49 @@ class HomePage(QWidget):
         if not file:
             return
 
-        output_dir = QFileDialog.getExistingDirectory(
-            self,
-            "Select Output Folder for Split Pages",
-            os.path.dirname(file),
-        )
-        if not output_dir:
+        try:
+            reader = PdfReader(file)
+            total_pages = len(reader.pages)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not open PDF file:\n{e}")
             return
 
-        try:
-            generated = split_pdf(file, output_dir)
+        if total_pages <= 1:
             QMessageBox.information(
                 self,
-                "Split Complete",
-                f"Successfully split '{os.path.basename(file)}' into {len(generated)} pages!\n\nSaved in:\n{output_dir}",
+                "Split PDF",
+                "This PDF only has 1 page, so it cannot be split.",
             )
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to split PDF:\n{e}")
+            return
+
+        dialog = SplitDialog(file, total_pages, parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            mode, param, output_dir = dialog.get_split_parameters()
+            try:
+                if mode == "at_page":
+                    generated = split_pdf_at_page(file, split_page=param, output_dir=output_dir)
+                elif mode == "cut_points":
+                    generated = split_pdf_by_cut_points(file, cut_points=param, output_dir=output_dir)
+                elif mode == "ranges":
+                    generated = split_pdf_by_ranges(file, page_ranges=param, output_dir=output_dir)
+                else:
+                    generated = split_pdf(file, output_dir=output_dir)
+
+                if generated:
+                    for g in generated:
+                        self.add_recent_file(g)
+
+                    reply = QMessageBox.question(
+                        self,
+                        "Split Complete",
+                        f"Successfully created {len(generated)} files in:\n{output_dir}\n\nWould you like to open Part 1 now?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.Yes,
+                    )
+                    if reply == QMessageBox.StandardButton.Yes:
+                        self.pdfSelected.emit(generated[0])
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to split PDF:\n{e}")
 
     def on_images_to_pdf_clicked(self):
         images, _ = QFileDialog.getOpenFileNames(
